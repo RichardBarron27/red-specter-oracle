@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+*.db
+.oracle/
+.env
+*.pem
+*.key
+models/
+*.gguf
+*.bin
+data/
+demo_data/
+*.deb

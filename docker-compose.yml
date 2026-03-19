@@ -1,0 +1,42 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: oracle-ollama
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 20G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  oracle:
+    build: .
+    container_name: oracle-api
+    ports:
+      - "8200:8200"
+    volumes:
+      - oracle-data:/root/.oracle
+    environment:
+      - ORACLE_OLLAMA_URL=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8200/api/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  oracle-data:
+  ollama-models:

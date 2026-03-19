@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "red-specter-oracle"
+version = "1.0.0"
+description = "Offline Research Assistant for Component-Level Exploitation Analysis"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Red Specter Security Research"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "pydantic>=2.0.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "httpx>=0.25.0",
+    "cryptography>=41.0.0",
+    "chromadb>=0.4.0",
+    "python-multipart>=0.0.6",
+]
+keywords = [
+    "ai-security",
+    "offline",
+    "research-assistant",
+    "tear-down",
+    "component-analysis",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+oracle = "oracle.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["oracle*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
