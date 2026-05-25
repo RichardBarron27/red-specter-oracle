@@ -64,6 +64,7 @@ def mock_ollama():
     """Mock Ollama client that returns fake embeddings."""
     client = MagicMock(spec=OllamaClient)
     client.embed.return_value = [0.1] * 768
+    client.embed_batch.side_effect = lambda texts, **kw: [[0.1] * 768 for _ in texts]
     client.has_model.return_value = False
     client.config = MagicMock()
     client.config.vision_model = "minicpm-v"

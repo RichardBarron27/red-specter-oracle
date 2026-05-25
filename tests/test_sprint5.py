@@ -72,7 +72,7 @@ def mock_ollama():
     client.is_available.return_value = True
     client.has_model.return_value = False
     client.config = MagicMock()
-    client.config.reasoning_model = "mistral-small:24b"
+    client.config.reasoning_model = "mistral:7b-instruct-v0.3-q4_K_M"
     client.config.vision_model = "minicpm-v"
     client.config.embedding_model = "nomic-embed-text"
     client.generate.return_value = {
@@ -550,3 +550,191 @@ class TestValidationAPI:
         session = db.create_session("API Profile")
         resp = client.get(f"/api/v1/validation/profile/{session['session_id']}")
         assert resp.status_code == 200
+
+
+# ============================================================
+# 13. INCOMPLETE Status — Timeout-as-GREEN Fix (Risk 1)
+# ============================================================
+
+class TestIncompleteValidation:
+    def test_empty_response_is_incomplete(self, validator):
+        result = validator.validate("", "Some source context.")
+        assert result.incomplete is True
+        assert result.status == "INCOMPLETE"
+        assert result.status_reason == "RED — Response Not Generated"
+        assert result.overall_score == 0.0
+        assert result.accuracy_grade == "F"
+        assert result.requires_review is True
+
+    def test_whitespace_only_is_incomplete(self, validator):
+        result = validator.validate("   \n\t  \n  ", "Some source context.")
+        assert result.incomplete is True
+        assert result.status == "INCOMPLETE"
+        assert result.overall_score == 0.0
+
+    def test_none_equivalent_empty_string_is_incomplete(self, validator):
+        result = validator.validate("", "")
+        assert result.incomplete is True
+        assert result.status == "INCOMPLETE"
+
+    def test_incomplete_result_is_signed(self, validator):
+        result = validator.validate("", "context")
+        assert result.signature != ""
+        assert result.signed_hash != ""
+
+    def test_incomplete_logged_to_audit(self, validator, db):
+        validator.validate("", "context")
+        log = db.get_audit_log()
+        incomplete_entries = [
+            e for e in log
+            if e["event_type"] == "response_validated"
+            and '"incomplete": true' in e.get("event_data", "")
+        ]
+        assert len(incomplete_entries) >= 1
+
+    def test_incomplete_to_dict(self, validator):
+        result = validator.validate("", "context")
+        d = result.to_dict()
+        assert d["incomplete"] is True
+        assert d["status"] == "INCOMPLETE"
+        assert d["status_reason"] == "RED — Response Not Generated"
+        assert d["overall_score"] == 0.0
+
+    def test_normal_response_still_validates(self, validator):
+        result = validator.validate(
+            "The STM32F407 runs at 168 MHz. [Source: datasheet.pdf, p.1]",
+            "STM32F407 ARM Cortex-M4 168 MHz microcontroller.",
+        )
+        assert result.incomplete is False
+        assert result.status in ("GREEN", "AMBER", "RED")
+        assert result.overall_score > 0.0
+
+    def test_partial_response_validates_normally(self, validator):
+        result = validator.validate(
+            "The chip has SPI.",
+            "The chip supports SPI and I2C interfaces.",
+        )
+        assert result.incomplete is False
+        assert result.accuracy_grade in ("A", "B", "C", "D", "F")
+
+
+# ============================================================
+# 14. Hash Chain Persistence Across Restarts (Risk 5)
+# ============================================================
+
+class TestChainPersistence:
+    def test_chain_continues_after_clean_restart(self, tmp_dir, config):
+        """10 events across 2 sessions form one verifiable chain."""
+        config.ensure_dirs()
+        state_path = tmp_dir / "chain_state.json"
+        db1 = Database(config.db_path)
+        crypto1 = CryptoEngine(key_path=tmp_dir / "keys" / "test.key")
+
+        # Session 1 — 5 events + clean flush
+        audit1 = AuditTrail(db1, crypto1, state_path=state_path)
+        for i in range(5):
+            audit1.log_event(f"event_{i}", {"n": i})
+        audit1.flush()
+        db1.close()
+
+        # Session 2 — same DB + key, 5 more events
+        db2 = Database(config.db_path)
+        crypto2 = CryptoEngine(key_path=tmp_dir / "keys" / "test.key")
+        audit2 = AuditTrail(db2, crypto2, state_path=state_path)
+        for i in range(5, 10):
+            audit2.log_event(f"event_{i}", {"n": i})
+
+        result = audit2.verify_chain()
+        assert result["valid"] is True
+        assert result["entries"] == 10
+        assert result["breaks"] == []
+        db2.close()
+
+    def test_state_file_written_after_each_event(self, tmp_dir, config):
+        config.ensure_dirs()
+        state_path = tmp_dir / "chain_state.json"
+        db = Database(config.db_path)
+        crypto = CryptoEngine(key_path=tmp_dir / "keys" / "test.key")
+        audit = AuditTrail(db, crypto, state_path=state_path)
+
+        assert not state_path.exists()
+        audit.log_event("test", {"x": 1})
+        assert state_path.exists()
+        db.close()
+
+    def test_state_file_has_valid_signature(self, tmp_dir, config):
+        config.ensure_dirs()
+        state_path = tmp_dir / "chain_state.json"
+        db = Database(config.db_path)
+        crypto = CryptoEngine(key_path=tmp_dir / "keys" / "test.key")
+        audit = AuditTrail(db, crypto, state_path=state_path)
+        audit.log_event("test", {"x": 1})
+        audit.flush()
+
+        data = json.loads(state_path.read_text())
+        sig = data.pop("signature")
+        canonical = json.dumps(data, sort_keys=True, separators=(",", ":"))
+        assert crypto.verify_json(canonical, sig)
+        db.close()
+
+    def test_unclean_shutdown_logs_recovery(self, tmp_dir, config):
+        """State file with clean_shutdown=false triggers RECOVERY event on next startup."""
+        config.ensure_dirs()
+        state_path = tmp_dir / "chain_state.json"
+        db = Database(config.db_path)
+        crypto = CryptoEngine(key_path=tmp_dir / "keys" / "test.key")
+
+        # Session 1 — no flush (unclean)
+        audit1 = AuditTrail(db, crypto, state_path=state_path)
+        audit1.log_event("before_crash", {"n": 1})
+        # Do NOT call flush() — simulates crash
+
+        # Session 2 — restart, should log RECOVERY
+        audit2 = AuditTrail(db, crypto, state_path=state_path)
+        log = db.get_audit_log()
+        event_types = [e["event_type"] for e in log]
+        assert "chain_recovery" in event_types
+        db.close()
+
+    def test_tampering_breaks_chain_verification(self, tmp_dir, config):
+        """Modifying event_data after the fact breaks verify_chain at that entry."""
+        import sqlite3
+        config.ensure_dirs()
+        state_path = tmp_dir / "chain_state.json"
+        db = Database(config.db_path)
+        crypto = CryptoEngine(key_path=tmp_dir / "keys" / "test.key")
+        audit = AuditTrail(db, crypto, state_path=state_path)
+
+        for i in range(5):
+            audit.log_event(f"event_{i}", {"n": i})
+
+        # Verify clean before tamper
+        assert audit.verify_chain()["valid"] is True
+
+        # Tamper with event_data of one row via raw SQL
+        conn = sqlite3.connect(str(config.db_path))
+        conn.execute(
+            "UPDATE audit_log SET event_data = '{\"tampered\": true}' "
+            "WHERE rowid = (SELECT rowid FROM audit_log LIMIT 1 OFFSET 2)"
+        )
+        conn.commit()
+        conn.close()
+
+        result = audit.verify_chain()
+        assert result["valid"] is False
+        assert len(result["breaks"]) >= 1
+        assert any(b["type"] == "data_tampered" for b in result["breaks"])
+        db.close()
+
+    def test_flush_marks_clean_shutdown(self, tmp_dir, config):
+        config.ensure_dirs()
+        state_path = tmp_dir / "chain_state.json"
+        db = Database(config.db_path)
+        crypto = CryptoEngine(key_path=tmp_dir / "keys" / "test.key")
+        audit = AuditTrail(db, crypto, state_path=state_path)
+        audit.log_event("e", {"x": 1})
+        audit.flush()
+
+        data = json.loads(state_path.read_text())
+        assert data["clean_shutdown"] is True
+        db.close()

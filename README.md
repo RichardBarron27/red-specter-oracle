@@ -60,11 +60,22 @@ Researcher → Chat UI → FastAPI → Query Engine
                                          └── AccuracyGrader
 ```
 
+## Performance
+
+| Setup | Inference speed | First-run download |
+|---|---|---|
+| CPU only (default) | ~3–8 tokens/sec | ~4 GB |
+| GPU (RTX 3060+) | ~40–80 tokens/sec | ~4 GB |
+| CPU + Mistral 24B (optional) | ~1–3 tokens/sec | ~16 GB |
+
+**CPU is fully supported.** Expect 15–40 seconds per response on CPU-only hardware with the default 7B model. A GPU accelerates this to near-instant. To upgrade to Mistral 24B for deeper analysis, set `ORACLE_REASONING_MODEL=mistral-small:24b-instruct-2501-q4_K_M` in your environment.
+
 ## Model Stack
 
 | Role | Model | RAM |
 |---|---|---|
-| Reasoning | Mistral Small 24B Q4_K_M | ~14 GB |
+| Reasoning (default) | Mistral 7B Instruct v0.3 Q4_K_M | ~4 GB |
+| Reasoning (optional) | Mistral Small 24B Q4_K_M | ~14 GB |
 | Vision | MiniCPM-V 2.6 8B Q4 (on-demand) | ~5 GB |
 | Embeddings | nomic-embed-text | ~274 MB |
 | OCR | Tesseract 5 | Minimal |

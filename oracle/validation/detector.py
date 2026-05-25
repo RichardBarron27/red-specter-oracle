@@ -52,7 +52,9 @@ class ValidationResult:
 
     # Composite
     overall_score: float = 0.0
-    status: str = "GREEN"           # GREEN, AMBER, RED
+    status: str = "GREEN"           # GREEN, AMBER, RED, INCOMPLETE
+    status_reason: str = ""
+    incomplete: bool = False
     requires_review: bool = False
 
     # Details
@@ -76,6 +78,8 @@ class ValidationResult:
             "accuracy_grade": self.accuracy_grade,
             "overall_score": round(self.overall_score, 3),
             "status": self.status,
+            "status_reason": self.status_reason,
+            "incomplete": self.incomplete,
             "requires_review": self.requires_review,
             "detections": [
                 {"pattern_id": d.pattern_id, "category": d.category,
@@ -380,6 +384,33 @@ class ResponseValidator:
         source_chunks: list[dict[str, Any]] | None = None,
     ) -> ValidationResult:
         """Run all 7 subsystems and return a validation result."""
+        # Precondition: empty / whitespace response cannot be validated
+        if not response_text or not response_text.strip():
+            result = ValidationResult()
+            result.incomplete = True
+            result.overall_score = 0.0
+            result.status = "INCOMPLETE"
+            result.status_reason = "RED — Response Not Generated"
+            result.accuracy_grade = "F"
+            result.requires_review = True
+            result_data = {
+                "overall_score": 0.0,
+                "status": "INCOMPLETE",
+                "grade": "F",
+                "timestamp": time.time(),
+                "incomplete": True,
+            }
+            canonical, sig = self.crypto.sign_json(result_data)
+            result.signed_hash = CryptoEngine.hash_data(canonical.encode())
+            result.signature = sig
+            self.db.add_audit_entry(
+                "response_validated",
+                json.dumps({"status": "INCOMPLETE", "grade": "F", "score": 0.0, "incomplete": True}),
+                result.signed_hash,
+            )
+            logger.warning("Validation: INCOMPLETE — empty response (response not generated)")
+            return result
+
         result = ValidationResult()
 
         # 1. Pattern matching

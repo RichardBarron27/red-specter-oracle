@@ -68,17 +68,18 @@ def vector_store(tmp_dir):
 def mock_ollama():
     client = MagicMock(spec=OllamaClient)
     client.embed.return_value = [0.1] * 768
+    client.embed_batch.side_effect = lambda texts, model=None: [[0.1] * 768 for _ in texts]
     client.is_available.return_value = True
     client.has_model.return_value = False
     client.config = MagicMock()
-    client.config.reasoning_model = "mistral-small:24b"
+    client.config.reasoning_model = "mistral:7b-instruct-v0.3-q4_K_M"
     client.config.vision_model = "minicpm-v"
     client.config.embedding_model = "nomic-embed-text"
     client.generate.return_value = {
         "response": "The STM32F407VGT6 supports SPI, I2C, and UART interfaces. "
                     "[Source: datasheet.pdf, p.1] The SPI bus connects to external flash. "
                     "[Source: schematic.pdf, p.2]",
-        "model": "mistral-small:24b",
+        "model": "mistral:7b-instruct-v0.3-q4_K_M",
     }
     return client
 

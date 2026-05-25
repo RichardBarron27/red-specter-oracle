@@ -72,19 +72,23 @@ class OllamaClient:
             return {"error": str(e), "response": ""}
 
     def embed(self, text: str, model: str | None = None) -> list[float]:
-        """Generate embeddings for text."""
+        """Generate embeddings for a single text string."""
+        results = self.embed_batch([text], model=model)
+        return results[0] if results else []
+
+    def embed_batch(self, texts: list[str], model: str | None = None) -> list[list[float]]:
+        """Generate embeddings for a batch of texts in a single Ollama call."""
         model = model or self.config.embedding_model
         try:
             resp = self._client.post(
                 "/api/embed",
-                json={"model": model, "input": text},
+                json={"model": model, "input": texts},
             )
             resp.raise_for_status()
             data = resp.json()
-            embeddings = data.get("embeddings", [[]])
-            return embeddings[0] if embeddings else []
+            return data.get("embeddings", [])
         except Exception as e:
-            logger.error(f"Embedding failed: {e}")
+            logger.error(f"Batch embedding failed: {e}")
             return []
 
     def generate_with_image(

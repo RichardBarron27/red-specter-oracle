@@ -20,7 +20,7 @@ DEFAULT_KEY_PATH = DEFAULT_CONFIG_DIR / "keys" / "oracle.key"
 class OllamaConfig:
     """Ollama LLM configuration."""
     base_url: str = "http://localhost:11434"
-    reasoning_model: str = "mistral-small:24b-instruct-2501-q4_K_M"
+    reasoning_model: str = "mistral:7b-instruct-v0.3-q4_K_M"
     vision_model: str = "minicpm-v:8b-2.6-q4_K_M"
     embedding_model: str = "nomic-embed-text"
     timeout: float = 300.0

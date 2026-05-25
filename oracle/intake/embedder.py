@@ -19,53 +19,59 @@ class EmbeddingPipeline:
         self.ollama = ollama
         self.vector_store = vector_store
 
+    BATCH_SIZE = 8
+
     def embed_and_store(self, chunks: list[Chunk], document_id: str) -> int:
         """Embed a list of chunks and store them in the vector store.
 
+        Sends chunks to Ollama in batches to minimise HTTP round-trips.
         Returns the number of chunks successfully stored.
         """
         stored = 0
+        active = [c for c in chunks if c.text.strip()]
 
-        for chunk in chunks:
-            if not chunk.text.strip():
+        for batch_start in range(0, len(active), self.BATCH_SIZE):
+            batch = active[batch_start: batch_start + self.BATCH_SIZE]
+            texts = [c.text for c in batch]
+
+            embeddings = self.ollama.embed_batch(texts)
+            if len(embeddings) != len(batch):
+                logger.warning(
+                    f"Batch embed returned {len(embeddings)} vectors for {len(batch)} chunks — skipping batch"
+                )
                 continue
 
-            # Generate embedding
-            embedding = self.ollama.embed(chunk.text)
-            if not embedding:
-                logger.warning(f"Failed to embed chunk {chunk.chunk_id}")
-                continue
+            for chunk, embedding in zip(batch, embeddings):
+                if not embedding:
+                    logger.warning(f"Empty embedding for chunk {chunk.chunk_id}")
+                    continue
 
-            # Build metadata for ChromaDB
-            metadata: dict[str, Any] = {
-                "document_id": document_id,
-                "source_file": chunk.source_file,
-                "chunk_index": chunk.chunk_index,
-                "content_type": chunk.content_type,
-                "language": chunk.language,
-                "confidence": chunk.confidence,
-                "token_estimate": chunk.token_estimate,
-            }
+                metadata: dict[str, Any] = {
+                    "document_id": document_id,
+                    "source_file": chunk.source_file,
+                    "chunk_index": chunk.chunk_index,
+                    "content_type": chunk.content_type,
+                    "language": chunk.language,
+                    "confidence": chunk.confidence,
+                    "token_estimate": chunk.token_estimate,
+                }
 
-            # Add optional fields (ChromaDB requires string/int/float/bool values)
-            if chunk.page is not None:
-                metadata["page"] = chunk.page
-            if chunk.section:
-                metadata["section"] = chunk.section
+                if chunk.page is not None:
+                    metadata["page"] = chunk.page
+                if chunk.section:
+                    metadata["section"] = chunk.section
 
-            # Flatten extra metadata (only simple types)
-            for k, v in chunk.metadata.items():
-                if isinstance(v, (str, int, float, bool)):
-                    metadata[k] = v
+                for k, v in chunk.metadata.items():
+                    if isinstance(v, (str, int, float, bool)):
+                        metadata[k] = v
 
-            # Store in vector store
-            self.vector_store.add(
-                doc_id=chunk.chunk_id,
-                text=chunk.text,
-                embedding=embedding,
-                metadata=metadata,
-            )
-            stored += 1
+                self.vector_store.add(
+                    doc_id=chunk.chunk_id,
+                    text=chunk.text,
+                    embedding=embedding,
+                    metadata=metadata,
+                )
+                stored += 1
 
         logger.info(f"Embedded and stored {stored}/{len(chunks)} chunks for document {document_id}")
         return stored

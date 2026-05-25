@@ -139,7 +139,7 @@ class QueryEngine:
         )
 
         # Merge validation with confidence scoring
-        if validation.status == "RED" and confidence.accuracy > 0.4:
+        if validation.status in ("RED", "INCOMPLETE") and confidence.accuracy > 0.4:
             # Validation caught something confidence didn't
             confidence.requires_review = True
 
