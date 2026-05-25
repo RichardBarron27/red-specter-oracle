@@ -24,11 +24,7 @@ cd red-specter-oracle
 ./setup.sh
 ```
 
-ORACLE will be available at:
-- **Document Intake:** http://localhost:8200/
-- **Chat Interface:** http://localhost:8200/chat
-- **Component Graph:** http://localhost:8200/graph
-- **API Docs:** http://localhost:8200/docs
+
 
 ## System Requirements
 
