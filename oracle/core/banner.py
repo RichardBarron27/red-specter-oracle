@@ -17,4 +17,5 @@ def print_banner(console: Console | None = None) -> None:
     banner_text.append(" v1.0.0\n", style="dim")
     banner_text.append("Offline Research Assistant for Component-Level Exploitation Analysis\n", style=EMERALD)
     banner_text.append('"ORACLE sees what others miss."', style="italic dim")
+    banner_text.append("\nEngineered by Richard Barron", style="dim")
     c.print(Panel(banner_text, border_style=EMERALD, expand=False))
